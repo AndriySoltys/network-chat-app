@@ -1,14 +1,17 @@
-﻿using System;
+﻿
+using System;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
 
 // ==========================================
-//  Program
+// PROGRAM MAIN 
 
-Console.WriteLine("1 - Сервер");
-Console.WriteLine("2 - Клієнт");
+Console.OutputEncoding = Encoding.UTF8;
+
+Console.WriteLine("1 - Server");
+Console.WriteLine("2 - Client");
 
 string? choice = Console.ReadLine();
 
@@ -23,7 +26,7 @@ else
 
 
 // ==========================================
-// Server
+// SERVER CLASS
 
 public class Server
 {
@@ -32,56 +35,114 @@ public class Server
         TcpListener server = new TcpListener(IPAddress.Any, 5000);
         server.Start();
 
-        Console.WriteLine("Сервер запущено");
+        Console.WriteLine("[SERVER] Started. Waiting for a client to connect...");
 
         TcpClient client = await server.AcceptTcpClientAsync();
+        Console.WriteLine($"[SERVER] Client {client.Client.RemoteEndPoint} connected to the chat.");
 
-        Console.WriteLine("Клієнт підключився");
-
-        NetworkStream stream = client.GetStream();
-
-        byte[] buffer = new byte[1024];
-
-        while (true)
+        using (client)
         {
-            int bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length);
+            NetworkStream stream = client.GetStream();
 
-            if (bytesRead == 0)
-                break;
+            _ = ReceiveMessagesAsync(stream);
 
-            string message = Encoding.UTF8.GetString(buffer, 0, bytesRead);
+            while (true)
+            {
+                string? message = Console.ReadLine();
 
-            Console.WriteLine($"Отримано: {message}");
+                if (string.IsNullOrEmpty(message))
+                    continue;
+
+                byte[] data = Encoding.UTF8.GetBytes(message);
+                await stream.WriteAsync(data, 0, data.Length);
+            }
+        }
+    }
+
+    private static async Task ReceiveMessagesAsync(NetworkStream stream)
+    {
+        byte[] buffer = new byte[1024];
+        try
+        {
+            while (true)
+            {
+                int bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length);
+
+                if (bytesRead == 0)
+                {
+                    Console.WriteLine("\n[SERVER] Client left the chat.");
+                    break;
+                }
+
+                string message = Encoding.UTF8.GetString(buffer, 0, bytesRead);
+                Console.WriteLine($"\n[CLIENT]: {message}");
+            }
+        }
+        catch (Exception)
+        {
+            Console.WriteLine("\n[SERVER] Connection with the client was lost.");
         }
     }
 }
 
 
 // ==========================================
-// Client
+// CLIENT CLASS
 
 public class Client
 {
     public static async Task Start()
     {
-        TcpClient client = new TcpClient();
+        using TcpClient client = new TcpClient();
 
-        await client.ConnectAsync("127.0.0.1", 5000);
-
-        Console.WriteLine("Підключено до сервера");
-
-        NetworkStream stream = client.GetStream();
-
-        while (true)
+        try
         {
-            string? message = Console.ReadLine();
+            await client.ConnectAsync("127.0.0.1", 5000);
+            Console.WriteLine("[CLIENT] Connected to the chat server. You can type now:");
 
-            if (string.IsNullOrEmpty(message))
-                continue;
+            NetworkStream stream = client.GetStream();
 
-            byte[] data = Encoding.UTF8.GetBytes(message);
+            _ = ReceiveMessagesAsync(stream);
 
-            await stream.WriteAsync(data, 0, data.Length);
+            while (true)
+            {
+                string? message = Console.ReadLine();
+
+                if (string.IsNullOrEmpty(message))
+                    continue;
+
+                byte[] data = Encoding.UTF8.GetBytes(message);
+                await stream.WriteAsync(data, 0, data.Length);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[CLIENT ERROR] {ex.Message}");
+        }
+    }
+
+    private static async Task ReceiveMessagesAsync(NetworkStream stream)
+    {
+        byte[] buffer = new byte[1024];
+        try
+        {
+            while (true)
+            {
+                int bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length);
+
+                if (bytesRead == 0)
+                {
+                    Console.WriteLine("\n[CLIENT] Server closed the chat.");
+                    break;
+                }
+
+                string response = Encoding.UTF8.GetString(buffer, 0, bytesRead);
+                Console.WriteLine($"\n[SERVER]: {response}");
+            }
+        }
+        catch (Exception)
+        {
+            Console.WriteLine("\n[CLIENT] Connection with the server was lost.");
         }
     }
 }
